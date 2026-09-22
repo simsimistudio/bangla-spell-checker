@@ -1,0 +1,59 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import difflib
+
+app = FastAPI()
+
+# সব ওয়েবসাইট বা ফ্রন্টএন্ড থেকে এক্সেস করার অনুমতি দেওয়ার জন্য CORS সেটআপ
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+),
+
+# ব্যাকএন্ডের নিজস্ব অটো-ডিকশনারি ও কমন ভুল কারেকশন ডেটাবেজ
+AUTO_CORRECTION_DB = {
+    "পরিক্ষা": "পরীক্ষা",
+    "উচিত": "উচিত",
+    "সান্তনা": "সান্ত্বনা",
+    "বাংলাদেস": "বাংলাদেশ",
+    "অবশই": "অবশ্যই",
+    "মুলত": "মূলত",
+    "সরাসরি": "সরাসরি",
+    "প্রয়োজন": "প্রয়োজন"
+}
+
+class TextRequest(BaseModel):
+    text: str
+
+@app.post("/check")
+def check_spelling(request: TextRequest):
+    words = request.text.split()
+    corrected_words = []
+    corrections_made = []
+
+    for word in words:
+        clean_word = word.strip(".,!?") # পাংচুয়েশন বাদ দিয়ে চেক করা
+        if clean_word in AUTO_CORRECTION_DB:
+            correct = AUTO_CORRECTION_DB[clean_word]
+            # যদি মূল শব্দের সাথে পিরিয়ড বা কমা থাকে তা যুক্ত করে দেওয়া
+            final_correct = word.replace(clean_word, correct)
+            corrected_words.append(final_correct)
+            if clean_word != correct:
+                corrections_made.append({"wrong": clean_word, "correct": correct})
+        else:
+            matches = difflib.get_close_matches(clean_word, AUTO_CORRECTION_DB.values(), n=1, cutoff=0.75)
+            if matches:
+                final_correct = word.replace(clean_word, matches[0])
+                corrected_words.append(final_correct)
+                corrections_made.append({"wrong": clean_word, "correct": matches[0]})
+            else:
+                corrected_words.append(word)
+
+    return {
+        "corrected_text": " ".join(corrected_words),
+        "corrections": corrections_made
+    }
